@@ -81,8 +81,8 @@ typedef  unsigned char      ub1;
 typedef           char      sb1;
 typedef  unsigned short     ub2;
 typedef  signed   short     sb2;
-typedef  unsigned long      ub4;
-typedef  signed   long      sb4;
+typedef  unsigned int       ub4;
+typedef  signed   int       sb4;
 typedef  unsigned long long ub8;
 typedef  signed   long long sb8;
 #define TRUE  1
@@ -703,7 +703,7 @@ int load( state *s, char *testfile)
 	goto failure;
       }
       if (value-1 != i) {
-	printf("jenny: -o, number %d found out-of-place\n", value);
+	printf("jenny: -o, number %ld found out-of-place\n", value);
 	goto failure;
       }
       if (parse_token(buf, UB4MAXVAL, &curr, &value) != TOKEN_FEATURE) {
@@ -711,7 +711,7 @@ int load( state *s, char *testfile)
 	goto failure;
       }
       if (value >= s->dim[i]) {
-	printf("jenny: -o, feature %c does not exist in dimension %d\n", 
+	printf("jenny: -o, feature %c does not exist in dimension %ld\n", 
 	       feature_name[value], i+1);
 	goto failure;
       }
@@ -835,7 +835,7 @@ int parse_w( state *s, sb1 *myarg)
     return FALSE;
   }
   if (used[dimension_number]) {
-    printf("jenny: -w, dimension %d was given twice in a single without\n",
+    printf("jenny: -w, dimension %ld was given twice in a single without\n",
 	   dimension_number+1);
     return FALSE;
   }
@@ -855,7 +855,7 @@ int parse_w( state *s, sb1 *myarg)
   
  feature:
   if (value >= s->dim[dimension_number]) {
-    printf("jenny: -w, there is no feature '%c' in dimension %d\n",
+    printf("jenny: -w, there is no feature '%c' in dimension %ld\n",
 	   feature_name[value], dimension_number+1);
     return FALSE;
   }
@@ -997,7 +997,7 @@ int parse( int argc, char *argv[], state *s)
 
   /* internal check: we have MAX_FEATURES names for features */
   if (strlen(feature_name) != MAX_FEATURES) {
-    printf("feature_name length is wrong, %d\n", strlen(feature_name));
+    printf("feature_name length is wrong, %ld\n", strlen(feature_name));
     return FALSE;
   }
 
@@ -1008,7 +1008,7 @@ int parse( int argc, char *argv[], state *s)
     }
   }
   if (temp > MAX_DIMENSIONS) {
-    printf("jenny: maximum number of dimensions is %ld.  %ld is too many.\n",
+    printf("jenny: maximum number of dimensions is %d.  %ld is too many.\n",
 	   MAX_DIMENSIONS, temp);
     return FALSE;
   }
@@ -1033,7 +1033,7 @@ int parse( int argc, char *argv[], state *s)
 	return FALSE;
       }
       if (temp < 2) {
-	printf("jenny: a dimension must have at least 2 features, not %d\n",
+	printf("jenny: a dimension must have at least 2 features, not %ld\n",
 	       temp);
 	return FALSE;
       }
@@ -1041,7 +1041,7 @@ int parse( int argc, char *argv[], state *s)
     } else if (argv[i][1] == 'h') {
       int i;
       for (i=0; i<(sizeof(jenny_doc)/sizeof(ub1 *)); ++i) {
-	printf(jenny_doc[i]);
+          printf("%s", jenny_doc[i]);
       }
       return FALSE;
     }
@@ -1073,7 +1073,7 @@ int parse( int argc, char *argv[], state *s)
   }                                            /* for (each argument) if '-' */
 
   if (s->n_final > s->ndim) {
-    printf("jenny: %ld-tuples are impossible with only %d dimensions\n",
+    printf("jenny: %d-tuples are impossible with only %d dimensions\n",
 	   s->n_final, s->ndim);
     return FALSE;
   }
@@ -1095,7 +1095,7 @@ void report( test *t, ub2 len)
 {
   ub4 i;
   for (i=0; i<len; ++i) {
-    printf(" %d%c", i+1, feature_name[t->f[i]]);
+    printf(" %ld%c", i+1, feature_name[t->f[i]]);
   }
   printf(" \n");
 }
@@ -1447,8 +1447,9 @@ ub4 generate_test( state *s, test *t, feature *tuple, ub1 n)
 
     /* If we can get all the withouts obeyed, break, success */
     if (!s->wc2 || obey_withouts(s, t, mut)) {
-      if (count_withouts(t, s->wc2)) {
-	printf("internal error without %d\n", s->wc2);
+      int withouts = count_withouts(t, s->wc2);
+      if (withouts) {
+          printf("internal error, %d withouts\n", withouts);
       }
       break;
     }
