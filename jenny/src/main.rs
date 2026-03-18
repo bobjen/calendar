@@ -1237,52 +1237,137 @@ fn generate_negative_tests(s: &mut State) {
     for wi in 0..orig_wc2.len() {
         let w = &orig_wc2[wi];
 
-        // Collect allowed features per dimension from this without.
-        let mut allowed: Vec<Vec<u16>> = vec![Vec::new(); ndim];
-        let mut i = 0;
-        while i < w.fe.len() {
-            let dim_d = w.fe[i].d;
-            let d = dim_d as usize;
-            while i < w.fe.len() && w.fe[i].d == dim_d {
-                allowed[d].push(w.fe[i].f);
-                i += 1;
+        // Collect the without's dimension indices and allowed features per dim.
+        // w.fe is sorted by d, so we group runs of the same d.
+        let mut without_dims: Vec<usize> = Vec::new();
+        let mut allowed: Vec<Vec<u16>> = Vec::new();
+        {
+            let mut i = 0;
+            while i < w.fe.len() {
+                let start = i;
+                let dim_d = w.fe[start].d;
+                while i < w.fe.len() && w.fe[i].d == dim_d {
+                    i += 1;
+                }
+                without_dims.push(dim_d as usize);
+                allowed.push(w.fe[start..i].iter().map(|fe| fe.f).collect());
+            }
+        }
+        let k = without_dims.len();
+        let e_k = e.min(k);
+
+        // Build k-dimensional sub-problem using only the without's dims and features.
+        let mut ns = State::new();
+        ns.ndim = k;
+        ns.dim = (0..k).map(|j| allowed[j].len()).collect();
+        ns.n_final = e_k;
+
+        // Project withouts W_0..W_{wi-1} onto the k sub-dims.
+        // Only include a without if all its dims appear in without_dims.
+        // Remap (d, f) -> (sub_d, sub_f); skip the without if any dim's features
+        // are entirely outside the allowed set (the without can never match).
+        for w_prev in &orig_wc2[..wi] {
+            let mut proj: Vec<Feature> = Vec::new();
+            let mut ok = true;
+            let mut i = 0;
+            while ok && i < w_prev.fe.len() {
+                let start = i;
+                let dim_d = w_prev.fe[start].d as usize;
+                let sub_d = match without_dims.iter().position(|&d| d == dim_d) {
+                    Some(j) => j,
+                    None => { ok = false; break; }
+                };
+                let mut dim_proj: Vec<u16> = Vec::new();
+                while i < w_prev.fe.len() && w_prev.fe[i].d == w_prev.fe[start].d {
+                    let f = w_prev.fe[i].f;
+                    if let Some(sub_f) = allowed[sub_d].iter().position(|&af| af == f) {
+                        dim_proj.push(sub_f as u16);
+                    }
+                    i += 1;
+                }
+                if dim_proj.is_empty() {
+                    // No available features match; without can never fire in sub-problem.
+                    ok = false;
+                } else {
+                    for sub_f in dim_proj {
+                        proj.push(Feature { d: sub_d as u16, f: sub_f });
+                    }
+                }
+            }
+            if ok {
+                proj.sort_by(|a, b| a.d.cmp(&b.d).then(a.f.cmp(&b.f)));
+                ns.wc2.push(Without { fe: proj });
             }
         }
 
-        // Build modified wc2: withouts[0..wi) plus single-feature exclusion
-        // withouts for each feature NOT in the allowed set for restricted dims.
-        let mut new_wc2 = orig_wc2[..wi].to_vec();
-        for d in 0..ndim {
-            if !allowed[d].is_empty() {
-                for f in 0..dim[d] {
-                    if !allowed[d].contains(&(f as u16)) {
-                        new_wc2.push(Without {
-                            fe: vec![Feature { d: d as u16, f: f as u16 }],
-                        });
-                    }
+        std::mem::swap(&mut ns.rng, &mut s.rng);
+        preliminary(&mut ns);
+        cover_tuples(&mut ns);
+        std::mem::swap(&mut ns.rng, &mut s.rng);
+
+        // Temporarily restrict s to withouts W_0..W_{wi-1} for obey_withouts
+        // when filling the non-without dimensions of each expanded test.
+        let saved_wc2 = s.wc2.clone();
+        let saved_wc3 = s.wc3.clone();
+        s.wc2 = orig_wc2[..wi].to_vec();
+        s.wc3 = Vec::new();
+        s.wc = vec![Vec::new(); ndim];
+        for (wii, w2) in s.wc2.iter().enumerate() {
+            let mut old_d: Option<u16> = None;
+            for fe in &w2.fe {
+                if Some(fe.d) != old_d {
+                    s.wc[fe.d as usize].push(wii);
+                    old_d = Some(fe.d);
                 }
             }
         }
 
-        // Build a fresh state for this without's negative tests.
-        let mut ns = State::new();
-        ns.ndim = ndim;
-        ns.dim = dim.clone();
-        ns.n_final = e;
-        ns.wc2 = new_wc2;
-        std::mem::swap(&mut ns.rng, &mut s.rng);
-
-        preliminary(&mut ns);
-        cover_tuples(&mut ns);
-
-        std::mem::swap(&mut ns.rng, &mut s.rng);
-
-        if confirm(&mut ns) {
-            for i in 0..ns.tests.len() {
-                report(&ns.tests[i], ndim);
+        // Expand each sub-test to a full-dimensional test.
+        for sub_test in &ns.tests {
+            // Fix the without's dims; other dims are mutable.
+            let mut mutable = vec![true; ndim];
+            for &wd in &without_dims {
+                mutable[wd] = false;
             }
-        } else {
-            println!("jenny: internal error, some negative tuples not covered");
+
+            let mut t = Test::new(ndim);
+            // Set without dims from sub-test, remapping feature indices.
+            for (j, &wd) in without_dims.iter().enumerate() {
+                t.f[wd] = allowed[j][sub_test.f[j] as usize];
+            }
+
+            // Randomly assign other dims, then satisfy surviving withouts.
+            let mut reported = false;
+            for _iter in 0..MAX_ITERS {
+                for d in 0..ndim {
+                    if mutable[d] {
+                        t.f[d] = (s.rng.next() as usize % dim[d]) as u16;
+                    }
+                }
+                if s.wc2.is_empty() || obey_withouts(s, &mut t, &mutable) {
+                    report(&t, ndim);
+                    reported = true;
+                    break;
+                }
+            }
+            if !reported {
+                // Best effort: report even if surviving withouts could not be satisfied.
+                report(&t, ndim);
+            }
+        }
+
+        // Restore withouts.
+        s.wc2 = saved_wc2;
+        s.wc3 = saved_wc3;
+        s.wc = vec![Vec::new(); ndim];
+        for (wii, w2) in s.wc2.iter().enumerate() {
+            let mut old_d: Option<u16> = None;
+            for fe in &w2.fe {
+                if Some(fe.d) != old_d {
+                    s.wc[fe.d as usize].push(wii);
+                    old_d = Some(fe.d);
+                }
+            }
         }
     }
 }
