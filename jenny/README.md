@@ -1,9 +1,9 @@
 # jenny
 
-Covering-array test-case generator.  Given a set of dimensions (parameters)
-each with a fixed number of features (values), jenny generates a compact set
-of test cases that covers every n-tuple of features drawn from n distinct
-dimensions.
+Covering-array test-case generator, also known as a pairwise testing tool.
+Given a set of dimensions (parameters) each with a fixed number of features
+(values), jenny generates a compact set of test cases that covers every
+n-tuple of features drawn from n distinct dimensions.
 
 Original C implementation by Bob Jenkins (March 2003, public domain).
 Rust translation in `src/`.
@@ -26,9 +26,13 @@ invalid configurations).  The `-e` flag then generates additional test cases
 that deliberately land in those forbidden zones, so you can verify that your
 system correctly rejects them.
 
+`-e N` covers all N-tuples *within* each forbidden combination, the same way
+`-n N` covers N-tuples across the positive test cases.  For example, given
+`-w1ab2ab3ab`:
+
 - `-e0` — no negative tests (default)
-- `-e1` — one negative test per forbidden combination
-- `-eN` — up to N negative tests per forbidden combination
+- `-e1` — cover each feature in each without (e.g. needs 2 tests to cover `1a`, `1b`, `2a`, `2b`, `3a`, `3b`)
+- `-e2` — cover each pair of features within each without (e.g. needs 5 tests to cover all pairs among those six features)
 
 ## Usage
 
@@ -42,7 +46,7 @@ Options:
 - `-n N`     cover all N-tuples (default 2)
 - `-s SEED`  random seed (last `-s` wins)
 - `-w SPEC`  forbidden combination (see below)
-- `-e N`     generate N negative test cases per without
+- `-e N`     cover all N-tuples within each forbidden combination
 - `-o FILE`  read existing tests from FILE and extend them
 - `-h`       help
 
@@ -57,7 +61,7 @@ jenny -n3 3 3 3 3 3 -w1a2b -e2
 ```
 
 Covers all triplets of a 5-dimension problem with one forbidden pair,
-and generates up to 2 negative tests exercising that forbidden pair.
+and generates negative tests covering all pairs within that forbidden combination.
 
 ## Building
 
