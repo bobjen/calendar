@@ -1,7 +1,0 @@
-[package]
-name = "bigfloat"
-version = "0.1.0"
-edition = "2021"
-
-[features]
-bigfloat-test = []
